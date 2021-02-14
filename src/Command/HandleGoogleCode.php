@@ -34,7 +34,8 @@ class HandleGoogleCode extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $filePath = $this->pathDir.'a_example.txt';
+//        $filePath = $this->pathDir.'a_example.txt';
+        $filePath = $this->pathDir.'c_memorable_moments.txt';
         $fileHandle = fopen($filePath, 'r');
 
         // get count photos
@@ -52,6 +53,7 @@ class HandleGoogleCode extends Command
                 // optimisation with get count
                 'count_tags' => (int) $photo[1],
                 'tags' => $tags,
+                'processing_score' => (int) $photo[1]
             ];
         }
 
@@ -68,31 +70,31 @@ class HandleGoogleCode extends Command
         return Command::SUCCESS;
     }
 
-    private function processHPhotos(array $photos)
+    private function unpack(string $line): array
     {
-        while(count($photos) > 0) {
-            $photo = array_shift($photos);
-            if(count($this->result) !== 0) {
-                $this->totalScore += $this->getScore($this->result[array_key_last($this->result)], $photo);
-            }
-            $this->result[] = $photo;
-            $this->countSlides++;
-        }
-
+        return explode(' ', trim($line));
     }
 
-    private function resort($array) {
+    private function resort($array)
+    {
         usort($array, function ($a, $b) {
-            // check improvve quality by compare by count(tags) and recalc by unique tags
-            return $b['count_tags'] <=> $a['count_tags'];
+            return $b['processing_score'] <=> $a['processing_score'];
         });
 
         return $array;
     }
 
-    private function unpack(string $line): array
+    private function processHPhotos(array $photos)
     {
-        return explode(' ', trim($line));
+        while (count($photos) > 0) {
+            $photo = array_shift($photos);
+            if (count($this->result) !== 0) {
+                $this->totalScore += $this->getScore($this->result[array_key_last($this->result)], $photo);
+            }
+            $this->result[] = $photo;
+            $this->countSlides++;
+            $this->recalcProcessScore($this->result[array_key_last($this->result)], $photos);
+        }
     }
 
     private function getScore($previous, $current): int
@@ -102,6 +104,15 @@ class HandleGoogleCode extends Command
             count(array_diff($previous['tags'], $current['tags'])),
             count(array_diff($current['tags'], $previous['tags']))
         );
+    }
+
+    private function recalcProcessScore($last, array &$photos): void
+    {
+        foreach ($photos as $key => $photo) {
+            $photos[$key]['processing_score'] = $this->getScore($last, $photo);
+        }
+
+        $photos = $this->resort($photos);
     }
 
 }
