@@ -35,29 +35,44 @@ class HandleGoogleCode extends Command
     protected function execute(InputInterface $input, OutputInterface $output)
     {
 //        $filePath = $this->pathDir.'a_example.txt';
+//        $filePath = $this->pathDir.'b_lovely_landscapes.txt';
         $filePath = $this->pathDir.'c_memorable_moments.txt';
         $fileHandle = fopen($filePath, 'r');
 
         // get count photos
         $countPhotos = (int) $this->unpack(fgets($fileHandle))[0];
-        $photos = [];
+        $photos = new \SplFixedArray($countPhotos);
+        $hPhotos = new \SplFixedArray($countPhotos);
+        $vPhotos = new \SplFixedArray($countPhotos);
 
         // init all photos by separate groups H and V
         for ($id = 0; $id < $countPhotos; $id++) {
             $photo = $this->unpack(fgets($fileHandle));
-            $tags = array_splice($photo, 2);
 
-            $photos[$photo[0]][$id] = [
-                'id' => $id,
+            $tags = array_splice($photo, 2);
+            if($photo[0] === 'H') {
+                $hPhotos[$id] = [
+                    'id' => $id,
 //                'orientation' => $photo[0],
-                // optimisation with get count
-                'count_tags' => (int) $photo[1],
-                'tags' => $tags,
-                'processing_score' => (int) $photo[1]
-            ];
+                    // optimisation with get count
+                    'count_tags' => (int) $photo[1],
+                    'tags' => $tags,
+                    'processing_score' => (int) $photo[1]
+                ];
+            } else {
+                continue;
+                $vPhotos[$id] = [
+                    'id' => $id,
+//                'orientation' => $photo[0],
+                    // optimisation with get count
+                    'count_tags' => (int) $photo[1],
+                    'tags' => $tags,
+                    'processing_score' => (int) $photo[1]
+                ];
+            }
         }
 
-        $hPhotos = $this->resort($photos['H']);
+        $hPhotos = $this->resort($hPhotos->toArray());
 
         $this->processHPhotos($hPhotos);
 
@@ -75,10 +90,12 @@ class HandleGoogleCode extends Command
         return explode(' ', trim($line));
     }
 
-    private function resort($array)
+    private function resort(array $array)
     {
         usort($array, function ($a, $b) {
-            return $b['processing_score'] <=> $a['processing_score'];
+            $aScore = $a['processing_score'] ?? 0;
+            $bScore = $b['processing_score'] ?? 0;
+            return $bScore <=> $aScore;
         });
 
         return $array;
@@ -86,8 +103,14 @@ class HandleGoogleCode extends Command
 
     private function processHPhotos(array $photos)
     {
+        $photos = array_filter($photos, function ($value) {
+           return !is_null($value);
+        });
+
         while (count($photos) > 0) {
             $photo = array_shift($photos);
+
+
             if (count($this->result) !== 0) {
                 $this->totalScore += $this->getScore($this->result[array_key_last($this->result)], $photo);
             }
@@ -99,6 +122,14 @@ class HandleGoogleCode extends Command
 
     private function getScore($previous, $current): int
     {
+        if(is_null($previous) || !array_key_exists('tags', $previous)) {
+            $previous['tags'] = [];
+        }
+
+        if(is_null($current) || !array_key_exists('tags', $current)) {
+            $current['tags'] = [];
+        }
+
         return min(
             count(array_intersect($previous['tags'], $current['tags'])),
             count(array_diff($previous['tags'], $current['tags'])),
