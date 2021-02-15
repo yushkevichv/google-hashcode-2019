@@ -20,6 +20,7 @@ class HandleGoogleCode extends Command
 
     public function __construct(HashcodeResolver $service, KernelInterface $kernel)
     {
+        ini_set('memory_limit', -1);
         $this->service = $service;
         $this->pathDir = $kernel->getProjectDir().'/input/';
 
@@ -37,11 +38,12 @@ class HandleGoogleCode extends Command
 //        $filePath = $this->pathDir.'a_example.txt';
 //        $filePath = $this->pathDir.'b_lovely_landscapes.txt';
         $filePath = $this->pathDir.'c_memorable_moments.txt';
+//        $filePath = $this->pathDir.'d_pet_pictures.txt';
+//        $filePath = $this->pathDir.'e_shiny_selfies.txt';
         $fileHandle = fopen($filePath, 'r');
 
         // get count photos
         $countPhotos = (int) $this->unpack(fgets($fileHandle))[0];
-        $photos = new \SplFixedArray($countPhotos);
         $hPhotos = new \SplFixedArray($countPhotos);
         $vPhotos = new \SplFixedArray($countPhotos);
 
@@ -50,7 +52,7 @@ class HandleGoogleCode extends Command
             $photo = $this->unpack(fgets($fileHandle));
 
             $tags = array_splice($photo, 2);
-            if($photo[0] === 'H') {
+            if ($photo[0] === 'H') {
                 $hPhotos[$id] = [
                     'id' => $id,
 //                'orientation' => $photo[0],
@@ -60,7 +62,6 @@ class HandleGoogleCode extends Command
                     'processing_score' => (int) $photo[1]
                 ];
             } else {
-                continue;
                 $vPhotos[$id] = [
                     'id' => $id,
 //                'orientation' => $photo[0],
@@ -74,7 +75,11 @@ class HandleGoogleCode extends Command
 
         $hPhotos = $this->resort($hPhotos->toArray());
 
+        $output->writeln("Start process HPhotos");
+
         $this->processHPhotos($hPhotos);
+        $output->writeln("Start process VPhotos");
+        $this->processsVPhotos($vPhotos->toArray());
 
         $output->writeln("Count photos is: $countPhotos");
         $output->writeln("Count slides is: $this->countSlides");
@@ -104,29 +109,29 @@ class HandleGoogleCode extends Command
     private function processHPhotos(array $photos)
     {
         $photos = array_filter($photos, function ($value) {
-           return !is_null($value);
+            return !is_null($value);
         });
 
         while (count($photos) > 0) {
             $photo = array_shift($photos);
-
 
             if (count($this->result) !== 0) {
                 $this->totalScore += $this->getScore($this->result[array_key_last($this->result)], $photo);
             }
             $this->result[] = $photo;
             $this->countSlides++;
+            // @todo it is correct for accuracy, but slow. At big files need to another algo
             $this->recalcProcessScore($this->result[array_key_last($this->result)], $photos);
         }
     }
 
     private function getScore($previous, $current): int
     {
-        if(is_null($previous) || !array_key_exists('tags', $previous)) {
+        if (is_null($previous) || !array_key_exists('tags', $previous)) {
             $previous['tags'] = [];
         }
 
-        if(is_null($current) || !array_key_exists('tags', $current)) {
+        if (is_null($current) || !array_key_exists('tags', $current)) {
             $current['tags'] = [];
         }
 
@@ -137,6 +142,9 @@ class HandleGoogleCode extends Command
         );
     }
 
+    /**
+     * Good works for a, b (?), c. But bad for d,e. Need another solution for last
+     */
     private function recalcProcessScore($last, array &$photos): void
     {
         foreach ($photos as $key => $photo) {
@@ -144,6 +152,44 @@ class HandleGoogleCode extends Command
         }
 
         $photos = $this->resort($photos);
+    }
+
+    private function processsVPhotos(array $photos)
+    {
+        $photos = array_filter($photos, function ($value) {
+            return !is_null($value);
+        });
+
+        usort($photos, function ($a, $b) {
+            return $b['count_tags'] <=> $a['count_tags'];
+        });
+
+        $slides = [];
+        while (count($photos) > 1) {
+            $photo1 = array_shift($photos);
+            $photo2 = array_pop($photos);
+            $tags = array_unique(array_merge($photo1['tags'], $photo2['tags']));
+
+            $slides[] = [
+                'photo1' => $photo1['id'],
+                'photo2' => $photo2['id'],
+                'tags' => $tags,
+                'count_tags' => count($tags),
+                'processing_score' => count($tags)
+            ];
+        }
+        if (count($photos) > 0) {
+            $slides[] = [
+                'photo1' => $photos[0]['id'],
+                'photo2' => null,
+                'tags' => $photos[0]['tags'],
+                'count_tags' => count($photos[0]['tags']),
+                'processing_score' => count($photos[0]['tags'])
+            ];
+        }
+
+        $slides = $this->resort($slides);
+        $this->processHPhotos($slides);
     }
 
 }
